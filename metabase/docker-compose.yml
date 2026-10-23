@@ -1,0 +1,12 @@
+# Metabase for PortfolioPulse. Run:  docker compose up -d   -> http://localhost:3000
+services:
+  metabase:
+    image: metabase/metabase:v0.50.26
+    container_name: portfolio-pulse-metabase
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db      # app metadata (H2) persisted in the volume below
+    volumes:
+      - ./data:/metabase-data
+    restart: unless-stopped

@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: mart_portfolio_value
+    description: >
+      Fact table. Value and unrealised gain/loss per position per trading day, in USD and NGN.
+      NGN market value uses that day's rate; NGN cost basis uses each purchase day's rate, so
+      NGN gain/loss includes the currency effect.
+    columns:
+      - name: position_key
+        description: "md5(ticker | position_date)."
+        data_tests: [unique, not_null]
+      - name: position_date
+        data_tests: [not_null]
+      - name: ticker
+        data_tests: [not_null]
+      - name: market_value_usd
+        data_tests: [not_null]
+      - name: market_value_ngn
+        data_tests: [not_null]
+      - name: usd_ngn_rate
+        data_tests: [not_null]
+
+  - name: mart_portfolio_daily
+    description: >
+      Headline mart: total portfolio value, cost and gain/loss per trading day in USD and NGN.
+      Answers the capstone question "what is my portfolio worth, in USD and Naira, over time?".
+    columns:
+      - name: position_date
+        data_tests: [unique, not_null]
+      - name: total_market_value_usd
+        data_tests: [not_null]
+      - name: total_market_value_ngn
+        data_tests: [not_null]
+      - name: rate_basis
+        description: "Honesty flag: observed / carried_forward / backfilled FX rate."
+
+  - name: mart_current_positions
+    description: "Latest snapshot per position; feeds the allocation donut and gain/loss bar chart."
+    columns:
+      - name: ticker
+        data_tests: [unique, not_null]
+      - name: allocation_pct
+        data_tests: [not_null]

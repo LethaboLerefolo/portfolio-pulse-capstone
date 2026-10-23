@@ -1,0 +1,54 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Raw landing zone in Neon. Three independent sources, loaded by three
+      different mechanisms, all orchestrated by one GitHub Actions workflow.
+    schema: "{{ var('raw_schema') }}"
+    tables:
+      - name: stock_prices
+        description: "Daily closing prices pulled with yfinance (python script, upserted on ticker + price_date)."
+        loaded_at_field: loaded_at
+        config:
+          freshness:
+            warn_after: {count: 3, period: day}      # a weekend is normal, 3 days is not
+            error_after: {count: 7, period: day}
+        columns:
+          - name: ticker
+            data_tests: [not_null]
+          - name: close_price
+            data_tests: [not_null]
+
+      - name: trade_log
+        description: >
+          Manually maintained trade history in Google Sheets (tab "trade_log"),
+          synced by Airbyte's Google Sheets source. Every cell arrives as TEXT.
+        loaded_at_field: _airbyte_extracted_at
+        config:
+          freshness:
+            warn_after: {count: 3, period: day}
+            error_after: {count: 7, period: day}
+        columns:
+          - name: trade_date
+            description: "ISO date, YYYY-MM-DD. Anything else fails the is_iso_date test."
+            data_tests: [not_null, is_iso_date]
+          - name: ticker
+            data_tests: [not_null]
+          - name: shares_bought
+            data_tests: [not_null, is_positive_number_text]
+          - name: price_paid_usd
+            data_tests: [not_null, is_positive_number_text]
+
+      - name: exchange_rate
+        description: >
+          USD -> NGN rate from the custom Airbyte connector (the NaijaShop pattern).
+          One row appended per sync, so history accumulates from the first sync onward.
+        loaded_at_field: _airbyte_extracted_at
+        config:
+          freshness:
+            warn_after: {count: 2, period: day}
+            error_after: {count: 5, period: day}
+        columns:
+          - name: rate
+            data_tests: [not_null]

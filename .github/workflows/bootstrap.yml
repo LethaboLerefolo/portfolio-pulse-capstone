@@ -1,0 +1,60 @@
+name: Bootstrap (one-time setup)
+
+# Run once from the Actions tab: creates raw tables + read-only user, backfills prices,
+# generates data/trade_log.csv from real closes (downloadable artifact).
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "Load price history from this date"
+        default: "2025-01-01"
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEON_HOST: ${{ secrets.NEON_HOST }}
+      NEON_DB: ${{ secrets.NEON_DB }}
+      NEON_USER: ${{ secrets.NEON_USER }}
+      NEON_PASSWORD: ${{ secrets.NEON_PASSWORD }}
+      READER_PASSWORD: ${{ secrets.READER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+
+      - name: Create raw tables, schemas and read-only user
+        run: |
+          export PGSSLMODE=require
+          URL="postgresql://${NEON_USER}:${NEON_PASSWORD}@${NEON_HOST}:5432/${NEON_DB}"
+          psql "$URL" -v ON_ERROR_STOP=1 -f sql/01_raw_schema.sql
+          psql "$URL" -v ON_ERROR_STOP=1 -v pw="$READER_PASSWORD" -f sql/03_bootstrap_reader.sql
+
+      - name: Backfill stock prices
+        env:
+          BACKFILL_FROM: ${{ inputs.backfill_from }}
+        run: python ingestion/ingest_stock_prices.py --backfill-from "$BACKFILL_FROM"
+
+      - name: Generate trade log from real closes
+        run: python scripts/generate_trade_log.py
+
+      - name: Commit generated trade log to the repo
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f data/trade_log.csv
+          git commit -m "Add generated trade log" || echo "nothing to commit"
+          git push
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trade_log
+          path: data/trade_log.csv

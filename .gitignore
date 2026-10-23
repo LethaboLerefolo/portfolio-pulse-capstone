@@ -1,0 +1,12 @@
+.env
+*.json.key
+service_account*.json
+__pycache__/
+.pytest_cache/
+.venv/
+portfolio_pulse_dbt/target/
+portfolio_pulse_dbt/dbt_packages/
+portfolio_pulse_dbt/logs/
+logs/
+metabase/data/
+*.log

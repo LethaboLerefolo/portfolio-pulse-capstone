@@ -1,0 +1,61 @@
+version: 6.36.0
+type: DeclarativeSource
+check:
+  type: CheckStream
+  stream_names:
+    - exchange_rate
+streams:
+  - type: DeclarativeStream
+    name: exchange_rate
+    primary_key: []
+    retriever:
+      type: SimpleRetriever
+      requester:
+        type: HttpRequester
+        url_base: https://open.er-api.com
+        path: /v6/latest/USD
+        http_method: GET
+      record_selector:
+        type: RecordSelector
+        extractor:
+          type: DpathExtractor
+          field_path: []
+    transformations:
+      - type: AddFields
+        fields:
+          - path:
+              - from
+            value: USD
+          - path:
+              - to
+            value: NGN
+          - path:
+              - rate
+            value: "{{ record['rates']['NGN'] }}"
+          - path:
+              - updatedAt
+            value: "{{ format_datetime(now_utc(), '%Y-%m-%dT%H:%M:%SZ') }}"
+    schema_loader:
+      type: InlineSchemaLoader
+      schema:
+        type: object
+        $schema: http://json-schema.org/draft-07/schema#
+        properties:
+          from:
+            type: string
+          to:
+            type: string
+          rate:
+            type: number
+          updatedAt:
+            type: string
+            format: date-time
+            airbyte_type: timestamp_with_timezone
+spec:
+  type: Spec
+  connection_specification:
+    type: object
+    $schema: http://json-schema.org/draft-07/schema#
+    required: []
+    properties: {}
+    additionalProperties: true

@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: stg_stock_prices
+    description: "Cleaned daily closing prices (unadjusted). One row per ticker per trading day."
+    columns:
+      - name: price_key
+        description: "Surrogate key: md5(ticker | price_date)."
+        data_tests: [unique, not_null]
+      - name: ticker
+        data_tests: [not_null]
+      - name: price_date
+        data_tests: [not_null]
+      - name: close_price
+        description: "Closing price in USD, strictly > 0."
+        data_tests: [not_null]
+
+  - name: stg_trades
+    description: "Typed, cleaned trade log. One row per buy."
+    columns:
+      - name: trade_id
+        description: "Surrogate key: hash of the row content plus an occurrence counter for exact duplicates."
+        data_tests: [unique, not_null]
+      - name: trade_date
+        data_tests: [not_null]
+      - name: ticker
+        data_tests: [not_null]
+      - name: shares_bought
+        data_tests: [not_null]
+      - name: price_paid_usd
+        data_tests: [not_null]
+      - name: cost_usd
+        description: "shares_bought * price_paid_usd."
+        data_tests: [not_null]
+
+  - name: stg_exchange_rates
+    description: "USD->NGN rate observations, one per Airbyte sync."
+    columns:
+      - name: fx_record_id
+        description: "Airbyte's _airbyte_raw_id - unique per synced record."
+        data_tests: [unique, not_null]
+      - name: usd_ngn_rate
+        data_tests: [not_null]
+      - name: rate_date
+        data_tests: [not_null]

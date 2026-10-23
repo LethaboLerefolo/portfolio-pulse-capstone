@@ -1,0 +1,8 @@
+# Ingestion + helper scripts (Python 3.11+)
+yfinance>=0.2.50
+pandas>=2.0
+psycopg2-binary>=2.9
+requests>=2.31
+# Only needed for the Google Sheets fallback (INGESTION_MODE=python)
+google-api-python-client>=2.100
+google-auth>=2.20

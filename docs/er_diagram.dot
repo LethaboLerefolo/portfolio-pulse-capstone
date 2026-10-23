@@ -1,0 +1,20 @@
+digraph ER {
+  rankdir=LR; fontname="Helvetica"; node [shape=plain, fontname="Helvetica"]; edge [color="#4a5b7a", fontname="Helvetica", fontsize=10];
+  stock_prices [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#dde6f5" colspan="2"><b>raw.stock_prices</b></td></tr><tr><td>PK</td><td>ticker, price_date</td></tr><tr><td></td><td>close_price, volume</td></tr></table>>];
+  trade_log [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#dde6f5" colspan="2"><b>raw.trade_log</b> (Airbyte)</td></tr><tr><td></td><td>trade_date, ticker (text)</td></tr><tr><td></td><td>shares_bought, price_paid_usd (text)</td></tr></table>>];
+  exchange_rate [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#dde6f5" colspan="2"><b>raw.exchange_rate</b> (Airbyte)</td></tr><tr><td></td><td>"from", "to", rate, "updatedAt"</td></tr></table>>];
+  stg_trades [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#e4f2e4" colspan="2"><b>stg_trades</b></td></tr><tr><td>PK</td><td>trade_id</td></tr><tr><td></td><td>trade_date, ticker, shares, price</td></tr></table>>];
+  stg_prices [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#e4f2e4" colspan="2"><b>stg_stock_prices</b></td></tr></table>>];
+  stg_fx [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#e4f2e4" colspan="2"><b>stg_exchange_rates</b></td></tr></table>>];
+  int_fx [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#fff0d8" colspan="2"><b>int_fx_daily</b></td></tr><tr><td>PK</td><td>rate_date</td></tr><tr><td></td><td>usd_ngn_rate, rate_basis</td></tr></table>>];
+  int_tr [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#fff0d8" colspan="2"><b>int_trades_enriched</b></td></tr><tr><td>PK</td><td>trade_id</td></tr><tr><td></td><td>cost_usd, cost_ngn</td></tr></table>>];
+  int_pos [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#fff0d8" colspan="2"><b>int_daily_positions</b></td></tr><tr><td>PK</td><td>ticker, position_date</td></tr><tr><td></td><td>shares_held, close_price (forward-filled)</td></tr></table>>];
+  m_val [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#f5dde6" colspan="2"><b>mart_portfolio_value</b> (fact)</td></tr><tr><td>PK</td><td>position_key</td></tr><tr><td></td><td>market_value_usd/ngn, gain_loss</td></tr></table>>];
+  m_day [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#f5dde6" colspan="2"><b>mart_portfolio_daily</b></td></tr><tr><td>PK</td><td>position_date</td></tr></table>>];
+  m_cur [label=<<table border="0" cellborder="1" cellspacing="0" cellpadding="4"><tr><td bgcolor="#f5dde6" colspan="2"><b>mart_current_positions</b></td></tr><tr><td>PK</td><td>ticker</td></tr></table>>];
+  stock_prices -> stg_prices; trade_log -> stg_trades; exchange_rate -> stg_fx;
+  stg_fx -> int_fx; stg_trades -> int_tr; int_fx -> int_tr [label="as-of join"];
+  int_tr -> int_pos; stg_prices -> int_pos [label="ticker, date"];
+  int_pos -> m_val; int_fx -> m_val [label="rate_date"];
+  m_val -> m_day; m_val -> m_cur;
+}

@@ -1,0 +1,168 @@
+name: PortfolioPulse Daily Pipeline
+
+# One workflow, end to end, no manual steps:
+#   ingest (yfinance + Airbyte Google Sheets + Airbyte exchange rate)
+#     -> dbt source freshness + quality gate -> dbt run -> dbt test -> post-run guard
+# Any failing step turns the run RED (and GitHub e-mails you). Nothing is swallowed.
+
+on:
+  schedule:
+    - cron: "30 22 * * *"      # daily 22:30 UTC (= 00:30 SAST) - after the US market has closed
+  workflow_dispatch:           # manual "Run workflow" button for demos / testing
+    inputs:
+      backfill_from:
+        description: "Optional YYYY-MM-DD - load stock price history from this date (first run only)"
+        required: false
+        default: ""
+
+# Never let two runs overlap (a manual run during the scheduled one would race on the same tables).
+concurrency:
+  group: portfolio-pulse
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ------------------------------------------------------------------ 1. INGEST
+  ingest:
+    name: "1 - Ingest all three sources"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEON_HOST: ${{ secrets.NEON_HOST }}
+      NEON_DB: ${{ secrets.NEON_DB }}
+      NEON_USER: ${{ secrets.NEON_USER }}
+      NEON_PASSWORD: ${{ secrets.NEON_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install ingestion dependencies
+        run: pip install -r requirements.txt
+
+      # Source 1 - yfinance (Python). Upsert, so re-runs are safe.
+      - name: "Source 1 - stock prices (yfinance -> Neon)"
+        env:
+          BACKFILL_FROM: ${{ inputs.backfill_from }}   # via env, never interpolated into the shell
+        run: |
+          if [ -n "$BACKFILL_FROM" ]; then
+            bash scripts/ci_run.sh python ingestion/ingest_stock_prices.py --backfill-from "$BACKFILL_FROM"
+          else
+            bash scripts/ci_run.sh python ingestion/ingest_stock_prices.py
+          fi
+
+      # Sources 2 + 3 - Airbyte Cloud (primary). Trigger via API, then WAIT for success.
+      - name: "Sources 2+3 - trigger Airbyte syncs (Google Sheet + exchange rate) and wait"
+        if: ${{ vars.INGESTION_MODE != 'python' }}
+        env:
+          AIRBYTE_CLIENT_ID: ${{ secrets.AIRBYTE_CLIENT_ID }}
+          AIRBYTE_CLIENT_SECRET: ${{ secrets.AIRBYTE_CLIENT_SECRET }}
+          SHEETS_CONNECTION_ID: ${{ secrets.AIRBYTE_SHEETS_CONNECTION_ID }}
+          FX_CONNECTION_ID: ${{ secrets.AIRBYTE_EXCHANGE_RATE_CONNECTION_ID }}
+        run: |
+          bash scripts/ci_run.sh python scripts/airbyte_sync.py \
+            --connection-id "$SHEETS_CONNECTION_ID" \
+            --connection-id "$FX_CONNECTION_ID"
+
+      # Sources 2 + 3 - Python fallback (set repo variable INGESTION_MODE=python if Airbyte's trial lapses).
+      - name: "Source 2 (fallback) - Google Sheet trade log via Sheets API"
+        if: ${{ vars.INGESTION_MODE == 'python' }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TRADE_LOG_SHEET_ID: ${{ secrets.TRADE_LOG_SHEET_ID }}
+        run: bash scripts/ci_run.sh python ingestion/ingest_trade_log_fallback.py
+
+      - name: "Source 3 (fallback) - USD->NGN exchange rate"
+        if: ${{ vars.INGESTION_MODE == 'python' }}
+        run: bash scripts/ci_run.sh python ingestion/ingest_exchange_rate_fallback.py
+
+  # ------------------------------------------------------------------ 2. TRANSFORM
+  transform:
+    name: "2 - dbt: freshness, quality gate, run, test"
+    runs-on: ubuntu-latest
+    needs: ingest                    # dbt only starts if every ingestion step succeeded
+    timeout-minutes: 30
+    env:
+      NEON_HOST: ${{ secrets.NEON_HOST }}
+      NEON_DB: ${{ secrets.NEON_DB }}
+      NEON_USER: ${{ secrets.NEON_USER }}
+      NEON_PASSWORD: ${{ secrets.NEON_PASSWORD }}
+      DBT_PROFILES_DIR: ${{ github.workspace }}/portfolio_pulse_dbt
+    defaults:
+      run:
+        working-directory: portfolio_pulse_dbt
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dbt.txt
+
+      - name: Install dbt Core (open source - NOT dbt Cloud)
+        working-directory: .
+        run: pip install -r requirements-dbt.txt psycopg2-binary
+
+      - name: dbt debug (can we reach Neon?)
+        run: bash $GITHUB_WORKSPACE/scripts/ci_run.sh dbt debug
+
+      # Fails if any raw source is older than its error threshold (e.g. yfinance silently stopped).
+      - name: dbt source freshness
+        run: bash $GITHUB_WORKSPACE/scripts/ci_run.sh dbt source freshness
+
+      # Quality gate BEFORE building: bad sheet data (typo'd date, negative price) stops the run here,
+      # so dashboards are never rebuilt from garbage.
+      - name: dbt test - raw source gate
+        run: bash $GITHUB_WORKSPACE/scripts/ci_run.sh dbt test --select "source:raw"
+
+      - name: dbt run
+        run: bash $GITHUB_WORKSPACE/scripts/ci_run.sh dbt run
+
+      - name: dbt test
+        run: bash $GITHUB_WORKSPACE/scripts/ci_run.sh dbt test
+
+      - name: dbt docs generate
+        run: bash $GITHUB_WORKSPACE/scripts/ci_run.sh dbt docs generate
+
+      - name: Upload dbt artifacts (run_results, manifest, catalog)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts
+          path: |
+            portfolio_pulse_dbt/target/run_results.json
+            portfolio_pulse_dbt/target/manifest.json
+            portfolio_pulse_dbt/target/catalog.json
+          retention-days: 14
+
+  # ------------------------------------------------------------------ 3. VERIFY
+  verify:
+    name: "3 - Post-run guard"
+    runs-on: ubuntu-latest
+    needs: transform
+    timeout-minutes: 10
+    env:
+      NEON_HOST: ${{ secrets.NEON_HOST }}
+      NEON_DB: ${{ secrets.NEON_DB }}
+      NEON_USER: ${{ secrets.NEON_USER }}
+      NEON_PASSWORD: ${{ secrets.NEON_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install psycopg2-binary
+      # Proves the OUTPUT is fresh and sane, not just that the steps exited 0.
+      # Also writes the headline numbers to the run summary page.
+      - name: Check latest portfolio value and publish run summary
+        run: bash scripts/ci_run.sh python scripts/post_run_check.py

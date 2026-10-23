@@ -1,0 +1,11 @@
+# PortfolioPulse - the portfolio universe (5-10 tickers required by the brief).
+# One Yahoo Finance symbol per line. All USD-denominated US listings so that the
+# only currency conversion in the system is USD -> NGN.
+AAPL   # Apple
+MSFT   # Microsoft
+NVDA   # NVIDIA
+GOOGL  # Alphabet (Class A)
+AMZN   # Amazon
+JPM    # JPMorgan Chase
+KO     # Coca-Cola
+VOO    # Vanguard S&P 500 ETF

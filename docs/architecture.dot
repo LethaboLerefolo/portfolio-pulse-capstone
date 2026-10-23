@@ -1,0 +1,13 @@
+digraph G {
+  rankdir=LR; fontname="Helvetica"; node [fontname="Helvetica", shape=box, style="rounded,filled", fillcolor="#f4f6fa", color="#4a5b7a"]; edge [color="#4a5b7a", fontname="Helvetica", fontsize=10];
+  subgraph cluster_src { label="Sources"; style=dashed; color="#999999";
+    yf [label="Yahoo Finance\n(yfinance, Python)"]; gs [label="Google Sheet\ntrade_log"]; fx [label="Exchange-rate API\nUSD→NGN"]; }
+  subgraph cluster_ing { label="Ingestion"; style=dashed; color="#999999";
+    py [label="ingest_stock_prices.py\n(upsert)"]; ab1 [label="Airbyte Cloud\nSheets connector"]; ab2 [label="Airbyte Cloud\ncustom connector"]; }
+  subgraph cluster_neon { label="Neon Postgres"; style=filled; fillcolor="#eef7ee"; color="#5a8f5a";
+    raw [label="raw\nstock_prices · trade_log · exchange_rate"]; stg [label="staging\nstg_*"]; int [label="intermediate\nint_fx_daily · int_trades_enriched\nint_daily_positions"]; mart [label="marts\nmart_portfolio_value\nmart_portfolio_daily\nmart_current_positions"]; }
+  dbt [label="dbt Core\nrun + tests + freshness", fillcolor="#fff4e0"]; mb [label="Metabase (Docker)\n4+ charts", fillcolor="#e8f0fe"]; gh [label="GitHub Actions\ndaily 22:30 UTC", fillcolor="#fde8e8"];
+  yf -> py; gs -> ab1; fx -> ab2; py -> raw; ab1 -> raw; ab2 -> raw;
+  raw -> stg -> int -> mart; dbt -> stg [style=dotted, label="builds"]; mart -> mb [label="read-only user"];
+  gh -> py [style=dashed, label="1 ingest"]; gh -> dbt [style=dashed, label="2 transform"];
+}

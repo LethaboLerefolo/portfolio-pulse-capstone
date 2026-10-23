@@ -1,0 +1,3 @@
+# dbt Core, open source (the brief: "dbt Core, not dbt Cloud").
+# Tested with dbt-core 1.13 / dbt-postgres 1.11. data_tests: syntax needs >= 1.8.
+dbt-postgres>=1.9,<2

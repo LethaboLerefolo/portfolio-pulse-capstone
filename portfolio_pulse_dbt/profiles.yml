@@ -1,0 +1,25 @@
+# Credentials come from environment variables - nothing secret lives in Git.
+# Same four NEON_* names as the GitHub Actions secrets.
+portfolio_pulse:
+  target: "{{ env_var('DBT_TARGET', 'neon') }}"
+  outputs:
+    neon:
+      type: postgres
+      host: "{{ env_var('NEON_HOST') }}"
+      port: 5432
+      user: "{{ env_var('NEON_USER') }}"
+      password: "{{ env_var('NEON_PASSWORD') }}"
+      dbname: "{{ env_var('NEON_DB') }}"
+      schema: public
+      sslmode: require
+      threads: 4
+      connect_timeout: 30
+    local:        # used by tests/local_e2e.py (throw-away Postgres on this machine)
+      type: postgres
+      host: "{{ env_var('LOCAL_PG_HOST', 'localhost') }}"
+      port: "{{ env_var('LOCAL_PG_PORT', '5432') | as_number }}"
+      user: "{{ env_var('LOCAL_PG_USER', 'postgres') }}"
+      password: "{{ env_var('LOCAL_PG_PASSWORD', 'postgres') }}"
+      dbname: "{{ env_var('LOCAL_PG_DB', 'portfolio_test') }}"
+      schema: public
+      threads: 4
